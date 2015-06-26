@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"regexp"
@@ -42,5 +43,5 @@ func main() {
 	re := regexp.MustCompile(`(?s)<tr class="tr-even tr-` + day + `">.+?<td class="td-2">(.+?)</td>`)
 	m := re.FindSubmatch(body)
 
-	print(string(m[1]) + "\n")
+	fmt.Println(string(m[1]))
 }
