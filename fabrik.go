@@ -51,7 +51,7 @@ func main() {
 	var meal string
 
 	if !*force {
-		meal = readTemp()
+		meal, _ = readTemp()
 	}
 
 	if meal == "" {
@@ -118,6 +118,7 @@ func extractMeal(body string) (meal string) {
 	return
 }
 
+// extractValidity looks for a date range in the given HTML.
 func extractValidity(body string) (from, to time.Time, err error) {
 	re := regexp.MustCompile(`<h2>(?P<from>\d{2}\.\d{2}.\d{4}) bis (?P<to>\d{2}\.\d{2}.\d{4})</h2>`)
 	matches := re.FindStringSubmatch(body)
@@ -131,44 +132,71 @@ func extractValidity(body string) (from, to time.Time, err error) {
 	return
 }
 
+// parseDate takes a string and tries to parse it
+// with the constant dateLayout.
 func parseDate(raw string) (time.Time, error) {
 	return time.Parse(dateLayout, raw)
 }
 
-func writeTemp(meal string) {
-	file, _ := ioutil.TempFile("", "fabrik-")
-	defer file.Close()
-	file.WriteString(meal)
-}
-
-func readTemp() (meal string) {
-	matches, _ := filepath.Glob(path.Join(os.TempDir(), "fabrik-*"))
-	if matches == nil {
+// writeTemp writes the given string to a file in the
+// default temporary directory.
+func writeTemp(meal string) (err error) {
+	file, err := ioutil.TempFile("", "fabrik-")
+	if err != nil {
 		return
 	}
+	defer file.Close()
+	file.WriteString(meal)
+	return
+}
 
-	var filename string
+// readTemp looks for a temporary file that was placed there
+// by this tool in the default temporary directory of the OS
+// and that was modified today.
+// If no such file is found, it will return os.ErrNotExist.
+// Otherwise it will attempt to read the file (retuning any
+// error if that fails) and return it's contents.
+func readTemp() (meal string, err error) {
+	matches, err := filepath.Glob(path.Join(os.TempDir(), "fabrik-*"))
+
+	// filepath.Glob should only return err if
+	// the glob pattern is malformed
+	if err != nil {
+		panic(err)
+	}
+
+	// filepath.Glob did not find any matches
+	if matches == nil {
+		return "", os.ErrNotExist
+	}
+
+	filename := ""
+
+	// truncate to 00:00 of today
 	from := now.Truncate(24 * time.Hour)
 
-	for _, name := range matches {
-		stat, err := os.Stat(name)
+	for _, v := range matches {
+		stat, err := os.Stat(v)
 		mtime := stat.ModTime()
 
 		if err != nil {
 			continue
 		} else if mtime.After(from) {
-			filename = name
+			filename = v
 			break
 		}
 	}
 
+	// no file last modified today, so again
+	// we did not find what we wanted
 	if filename == "" {
-		return
+		return "", os.ErrNotExist
 	}
 
 	b, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return
 	}
-	return string(b)
+
+	return string(b), nil
 }
