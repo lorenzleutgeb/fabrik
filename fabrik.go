@@ -129,6 +129,7 @@ func extractValidity(body string) (from, to time.Time, err error) {
 	}
 
 	to, err = parseDate(matches[2])
+	to = to.Add(24 * time.Hour)
 	return
 }
 
