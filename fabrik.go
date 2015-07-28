@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"html"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -43,7 +44,7 @@ func init() {
 
 func main() {
 	if wd == time.Saturday || wd == time.Sunday {
-		fmt.Fprintln(os.Stderr, "ERROR: Today is "+wd.String()+". Try again on Monday.")
+		fmt.Fprintf(os.Stderr, "ERROR: Today is %s. Try again on Monday.\n", wd.String())
 		os.Exit(1)
 		return
 	}
@@ -61,9 +62,8 @@ func main() {
 		if meal != "" {
 			writeTemp(meal)
 		}
-	} else {
-		fmt.Println(meal)
 	}
+	fmt.Println(meal)
 }
 
 func fetch() (body string, err error) {
@@ -84,7 +84,6 @@ func fetch() (body string, err error) {
 }
 
 func extractMeal(body string) (meal string) {
-
 	from, to, err := extractValidity(body)
 
 	if err != nil {
@@ -107,14 +106,13 @@ func extractMeal(body string) (meal string) {
 	re := regexp.MustCompile(`(?s)<tr class="tr-even tr-` + day + `">.+?<td class="td-2">(.+?)</td>`)
 	matches := re.FindStringSubmatch(body)
 
-	meal = matches[1]
+	meal = html.UnescapeString(matches[1])
 
 	if meal == "Ruhetag" {
 		fmt.Fprintln(os.Stderr, "ERROR: Fabrik is closed today.")
 		os.Exit(3)
 	}
 
-	fmt.Println(meal)
 	return
 }
 
