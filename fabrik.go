@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"path"
@@ -32,9 +33,10 @@ var (
 
 	force = flag.Bool("force", false, "always download, no caching.")
 
-	ErrFabrikClosed   = errors.New("fabrik is closed")
-	ErrMenuFromPast   = errors.New("the menu is outdated")
-	ErrMenuFromFuture = errors.New("the menu is from the future")
+	errFabrikClosed   = errors.New("fabrik is closed")
+	errMenuFromPast   = errors.New("the menu is outdated")
+	errMenuFromFuture = errors.New("the menu is from the future")
+	errFabrikResting  = errors.New("fabrik is on a day off")
 )
 
 func init() {
@@ -44,56 +46,65 @@ func init() {
 
 func main() {
 	if wd == time.Saturday || wd == time.Sunday {
-		fmt.Fprintf(os.Stderr, "ERROR: Today is %s. Try again on Monday.\n", wd.String())
-		os.Exit(1)
-		return
+		log.Fatal(errFabrikClosed)
 	}
 
 	var meal string
+	var err error
 
 	if !*force {
-		meal, _ = readTemp()
+		meal, err = readTemp()
+
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	if meal == "" {
-		body, _ := fetch()
-		meal = extractMeal(body)
+		body, err := fetch()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		meal, err = extractMeal(body)
+		if err != nil {
+			log.Fatal(err)
+		}
 
 		if meal != "" {
 			writeTemp(meal)
 		}
 	}
+
 	fmt.Println(meal)
 }
 
-func fetch() (body string, err error) {
+func fetch() (string, error) {
 	res, err := http.Get(target)
 
 	if err != nil {
-		return
+		return "", err
 	}
 
 	b, err := ioutil.ReadAll(res.Body)
 	defer res.Body.Close()
 
 	if err != nil {
-		return
+		return "", err
 	}
 
 	return string(b), nil
 }
 
-func extractMeal(body string) (meal string) {
+func extractMeal(body string) (meal string, err error) {
 	from, to, err := extractValidity(body)
 
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "WARNING: Failed to interpret validity for the menu. Assuming it is valid; result could be wrong.")
+		return
 	} else if now.After(to) {
-		fmt.Fprintln(os.Stderr, "ERROR: The menu is outdated, aborting.")
-		os.Exit(2)
-
+		return "", errMenuFromPast
 	} else if now.Before(from) {
-		fmt.Fprintln(os.Stderr, "WARNING: The menu is from the future. Results may be confusing.")
+		return "", errMenuFromFuture
 	}
 
 	idx := (wd - 1) * 2
@@ -109,8 +120,7 @@ func extractMeal(body string) (meal string) {
 	meal = html.UnescapeString(matches[1])
 
 	if meal == "Ruhetag" {
-		fmt.Fprintln(os.Stderr, "ERROR: Fabrik is closed today.")
-		os.Exit(3)
+		return "", errFabrikResting
 	}
 
 	return
@@ -139,14 +149,14 @@ func parseDate(raw string) (time.Time, error) {
 
 // writeTemp writes the given string to a file in the
 // default temporary directory.
-func writeTemp(meal string) (err error) {
+func writeTemp(meal string) error {
 	file, err := ioutil.TempFile("", "fabrik-")
 	if err != nil {
-		return
+		return err
 	}
 	defer file.Close()
 	file.WriteString(meal)
-	return
+	return nil
 }
 
 // readTemp looks for a temporary file that was placed there
