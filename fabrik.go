@@ -6,22 +6,25 @@ import (
 	"fmt"
 	"html"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
 const (
-	// Where the menu is posted
+	// Where the menu is posted.
 	target = "http://www.diefabrik.co.at/mittagsmenue/index.html"
 
-	// Layout of dates on website
+	// Layout of dates on website.
 	dateLayout = "02.01.2006"
+
+	// If this string is found, assume holidays.
+	holidayMagic = "urlaub"
 )
 
 var (
@@ -37,6 +40,7 @@ var (
 	errMenuFromPast   = errors.New("the menu is outdated")
 	errMenuFromFuture = errors.New("the menu is from the future")
 	errFabrikResting  = errors.New("fabrik is on a day off")
+	errFabrikHoliday  = errors.New("fabrik is probably on holiday, fall back to manual check")
 )
 
 func init() {
@@ -44,9 +48,14 @@ func init() {
 	wd = now.Weekday()
 }
 
+func bail(err error) {
+	fmt.Println(err)
+	os.Exit(1)
+}
+
 func main() {
 	if wd == time.Saturday || wd == time.Sunday {
-		log.Fatal(errFabrikClosed)
+		bail(errFabrikClosed)
 	}
 
 	var meal string
@@ -55,20 +64,24 @@ func main() {
 	if !*force {
 		meal, err = readTemp()
 
-		if err != nil {
-			log.Fatal(err)
+		if err != nil && err != os.ErrNotExist {
+			bail(err)
 		}
 	}
 
 	if meal == "" {
 		body, err := fetch()
 		if err != nil {
-			log.Fatal(err)
+			bail(err)
+		}
+
+		if checkHoliday(body) {
+			bail(errFabrikHoliday)
 		}
 
 		meal, err = extractMeal(body)
 		if err != nil {
-			log.Fatal(err)
+			bail(err)
 		}
 
 		if meal != "" {
@@ -94,6 +107,10 @@ func fetch() (string, error) {
 	}
 
 	return string(b), nil
+}
+
+func checkHoliday(body string) bool {
+	return strings.Contains(strings.ToLower(body), holidayMagic)
 }
 
 func extractMeal(body string) (meal string, err error) {
